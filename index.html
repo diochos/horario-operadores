@@ -8,111 +8,116 @@
     body { font-family: sans-serif; padding: 1rem; }
     h1 { margin-bottom: .5rem; }
     .controls { margin-bottom: 1rem; }
-    .controls button, .controls input { margin-right: .5rem; }
-    table { border-collapse: collapse; width: 100%; max-width: 800px; }
-    th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: center; }
+    .controls button, .controls input { margin-right: 1rem; }
+    .message { color: red; font-weight: bold; margin-bottom: 1rem; }
+    table { border-collapse: collapse; width: 100%; max-width: 100%; overflow-x: auto; display: block; }
+    th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: center; white-space: nowrap; }
     th { background: #f0f0f0; }
-    .rest { background: #f88; }
     .work { background: #8f8; }
+    .rest { background: #f88; }
   </style>
 </head>
 <body>
-  <h1>Horario Semanal de Operadores (Visualización)</h1>
+  <h1>Horario Semanal de Operadores</h1>
   <div class="controls">
     <button id="prev">« Semana anterior</button>
     <button id="next">Semana siguiente »</button>
-    <label>
-      Fecha (cualquier día):
-      <input type="date" id="weekInput" />
-    </label>
+    <label>Fecha:<input type="date" id="weekInput" /></label>
     <button id="load">Cargar semana</button>
   </div>
-  <div id="schedule"></div>
+  <div id="message"></div>
+  <table id="schedule"></table>
+
   <script>
-    // Patrón fijo de turnos: 1=trabajo, 0=descanso (lunes a sábado)
     const baseSchedule = [
-      [1,1,1,1,0,0], [1,1,0,0,1,1], [0,0,1,1,1,1], [1,1,1,0,0,1],
-      [0,1,1,1,1,0], [1,0,0,1,1,1], [1,1,1,0,0,1], [0,0,1,1,1,1],
-      [1,1,0,1,1,0], [0,1,1,0,1,1]
+      [1,1,1,1,0,0],[1,1,0,0,1,1],[0,0,1,1,1,1],[1,1,1,0,0,1],
+      [0,1,1,1,1,0],[1,0,0,1,1,1],[1,1,1,0,0,1],[0,0,1,1,1,1],
+      [1,1,0,1,1,0],[0,1,1,0,1,1]
     ];
-    const names = [
-     "Eduardo","Gabriel","Rebeca","David",
-      "Enrique","Mariel","René","Josué","Heidi",  "Ruben"    ];
-    // Calcula el lunes de la semana de la fecha dada
-    function getMonday(d) {
-      const date = new Date(d);
-      const day = date.getDay();
-      const diff = (day + 6) % 7;
-      date.setDate(date.getDate() - diff);
-      return date;
-    }
-    // Índice de semanas desde base 2025-06-30
-    function weekIndex(monday) {
-      const base = new Date('2025-06-30');
-      const diffMs = monday - getMonday(base);
-      return Math.floor(diffMs / (7*24*60*60*1000));
-    }
-    // Renderiza la semana dada
-    function renderWeek(monday) {
-      const container = document.getElementById('schedule');
-      container.innerHTML = '';
-      const idx = weekIndex(monday);
-      const rot = ((idx % names.length) + names.length) % names.length;
-      const order = names.slice(rot).concat(names.slice(0,rot));
-      // Construir tabla
-      const tbl = document.createElement('table');
-      // Encabezados
-      const dates = [];
-      for (let i=0; i<7; i++) {
-        const d = new Date(monday);
-        d.setDate(d.getDate() + i);
-        dates.push(d);
-      }
-      const thead = document.createElement('thead');
-      let hdr = '<tr><th>Operador</th>';
-      dates.forEach((d,i) => {
-        const labels = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-        hdr += `<th>${labels[i]}<br>${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</th>`;
-      });
-      hdr += '<th>Hrs</th></tr>';
-      thead.innerHTML = hdr;
-      tbl.appendChild(thead);
-      // Cuerpo
-      const tbody = document.createElement('tbody');
-      order.forEach((name,i) => {
-        let hrs = 0;
-        const row = document.createElement('tr');
-        row.innerHTML = `<td>${name}</td>`;
-        for (let d=0; d<7; d++) {
-          const isWork = d<6 ? baseSchedule[i][d] === 1 : false;
-          const cls = isWork ? 'work' : 'rest';
-          const text = isWork ? 'Turno' : 'Descanso';
-          if (isWork) hrs += 12;
-          row.innerHTML += `<td class="${cls}">${text}</td>`;
-        }
-        row.innerHTML += `<td>${hrs}</td>`;
-        tbody.appendChild(row);
-      });
-      tbl.appendChild(tbody);
-      container.appendChild(tbl);
-    }
-    // UI
+    let scheduleMap={}, overrideMap={}, weeks=[];
     let currentMonday;
-    document.getElementById('prev').onclick = () => { currentMonday.setDate(currentMonday.getDate()-7); updateUI(); };
-    document.getElementById('next').onclick = () => { currentMonday.setDate(currentMonday.getDate()+7); updateUI(); };
-    document.getElementById('load').onclick = () => {
-      const val = document.getElementById('weekInput').value;
-      if (!val) return;
-      currentMonday = getMonday(new Date(val));
-      updateUI();
-    };
-    function updateUI() {
-      document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
-      renderWeek(currentMonday);
+
+    function parseDateDMY(str) {
+      const [d,m,y]=str.split('/').map(Number);
+      return new Date(y, m-1, d);
     }
-    window.addEventListener('DOMContentLoaded', () => {
-      currentMonday = getMonday(new Date());
-      updateUI();
+    function fmtDate(d) {
+      const dd=('0'+d.getDate()).slice(-2);
+      const mm=('0'+(d.getMonth()+1)).slice(-2);
+      return `${dd}/${mm}/${d.getFullYear()}`;
+    }
+    function getMonday(d) {
+      const dt=new Date(d.getTime());
+      const diff=(dt.getDay()+6)%7;
+      dt.setDate(dt.getDate()-diff);
+      dt.setHours(0,0,0,0);
+      return dt;
+    }
+
+    async function loadData() {
+      let res=await fetch('schedule.csv');
+      if(!res.ok) throw new Error('schedule.csv no encontrado');
+      let rows=(await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
+      for(let i=1;i<rows.length;i++){const [date,...names]=rows[i];scheduleMap[date]=names;weeks.push(date);}      
+      res=await fetch('overrides.csv');
+      if(res.ok){
+        let orows=(await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
+        for(let i=1;i<orows.length;i++){const [date,pos,day,val]=orows[i];overrideMap[date]=overrideMap[date]||{};overrideMap[date][pos]=overrideMap[date][pos]||{};overrideMap[date][pos][day]= val==='1';}
+      }
+    }
+
+    function renderWeek(monday){
+      const table=document.getElementById('schedule'),msg=document.getElementById('message');
+      table.innerHTML='';msg.textContent='';
+      const key=fmtDate(monday);
+      const names=scheduleMap[key];
+      if(!names){ msg.textContent='Semana no disponible en CSV'; return; }
+      let hdr='<tr><th>Operador</th>';
+      for(let i=0;i<7;i++){const d=new Date(monday);d.setDate(d.getDate()+i);hdr+=`<th>${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][i]}<br>${fmtDate(d)}</th>`;}
+      hdr+='<th>Hrs</th></tr>';
+      table.innerHTML=`<thead>${hdr}</thead><tbody></tbody>`;
+      const tb=table.querySelector('tbody');
+      for(let pos=0;pos<10;pos++){
+        let row=`<tr><td>${names[pos]||''}</td>`;let hrs=0;
+        for(let d=0;d<7;d++){
+          let work=(d<6 && baseSchedule[pos][d]===1);
+          const ov=overrideMap[key]&&overrideMap[key][String(pos)]&&overrideMap[key][String(pos)][String(d)];
+          if(ov!==undefined) work=ov;
+          if(work) hrs+=12;
+          row+=`<td class="${work?'work':'rest'}">${work?'Turno':'Descanso'}</td>`;
+        }
+        row+=`<td>${hrs}</td></tr>`;
+        tb.insertAdjacentHTML('beforeend',row);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded',async()=>{
+      await loadData();
+      // Init currentMonday to today's week
+      let mon=getMonday(new Date());
+      const key=fmtDate(mon);
+      if(!scheduleMap[key]) mon=getMonday(parseDateDMY(weeks[0]));
+      currentMonday=mon;
+      document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10);
+      renderWeek(currentMonday);
+      // Bind nav
+      document.getElementById('prev').addEventListener('click',()=>{
+        currentMonday.setDate(currentMonday.getDate()-7);
+        document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10);
+        renderWeek(currentMonday);
+      });
+      document.getElementById('next').addEventListener('click',()=>{
+        currentMonday.setDate(currentMonday.getDate()+7);
+        document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10);
+        renderWeek(currentMonday);
+      });
+      document.getElementById('load').addEventListener('click',()=>{
+        const v=document.getElementById('weekInput').value;
+        if(!v) return;
+        const mon2=getMonday(new Date(v));
+        currentMonday=mon2;
+        renderWeek(currentMonday);
+      });
     });
   </script>
 </body>
