@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Horario Semanal de Ingenieros de Proceso</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    h1 { margin-bottom: .5rem; }
+    .controls { margin-bottom: 1rem; }
+    .controls button, .controls input { margin-right: 1rem; }
+    .message { color: red; font-weight: bold; margin-bottom: 1rem; }
+    table { border-collapse: collapse; width: 100%; max-width: 100%; overflow-x: auto; display: block; }
+    th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: center; white-space: nowrap; }
+    th { background: #f0f0f0; }
+    .work { background: #8f8; }
+    .rest { background: #f88; }
+    .navbar { margin-bottom: 1rem; }
+    .nav-container { display: flex; align-items: center; gap: 1rem; }
+    .nav-logo { font-weight: bold; }
+    .nav-links a { margin-right: .75rem; text-decoration: none; color: inherit; }
+  </style>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-container">
+      <span class="nav-logo">Línea 8</span>
+      <div class="nav-links">
+        <a href="index.html">Operadores</a>
+        <a href="ing.html">Ingenieros de Proceso</a>
+        <a href="admin.html">Administrar Horarios</a>
+      </div>
+    </div>
+  </nav>
+
+  <h1>Horario Semanal de Ingenieros de Proceso</h1>
+  <div class="controls">
+    <button id="prev">« Semana anterior</button>
+    <button id="next">Semana siguiente »</button>
+    <label>Fecha:<input type="date" id="weekInput" /></label>
+    <button id="load">Cargar semana</button>
+  </div>
+  <div id="message" class="message"></div>
+  <table id="schedule"></table>
+
+  <script>
+    const baseSchedule = [
+      [1,1,1,1,0,0],
+      [1,1,0,0,1,1],
+      [0,0,1,1,1,1],
+      [1,1,1,0,0,1],
+      [0,1,1,1,1,0],
+      [1,0,0,1,1,1],
+      [1,1,1,0,0,1],
+      [0,0,1,1,1,1],
+      [1,1,0,1,1,0],
+      [0,1,1,0,1,1]
+    ];
+    let scheduleMap = {}, overrideMap = {}, weeks = [], currentMonday;
+
+    function parseDateDMY(str) {
+      const [d,m,y] = str.split('/').map(Number);
+      return new Date(y, m-1, d);
+    }
+    function fmtDate(d) {
+      const dd = ('0'+d.getDate()).slice(-2);
+      const mm = ('0'+(d.getMonth()+1)).slice(-2);
+      return `${dd}/${mm}/${d.getFullYear()}`;
+    }
+    function getMonday(d) {
+      const dt = new Date(d);
+      const diff = (dt.getDay()+6)%7;
+      dt.setDate(dt.getDate()-diff);
+      dt.setHours(0,0,0,0);
+      return dt;
+    }
+
+    async function loadData() {
+      // schedule_ing.csv
+      let res = await fetch('schedule_ing.csv');
+      if (!res.ok) throw new Error('schedule_ing.csv no encontrado');
+      let rows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
+      for (let i = 1; i < rows.length; i++) {
+        const [date, ...names] = rows[i];
+        scheduleMap[date] = names;
+        weeks.push(date);
+      }
+      // overrides_ing.csv con cache-bust
+      res = await fetch('overrides_ing.csv?ts=' + Date.now(), { cache: 'no-store' });
+      if (res.ok) {
+        let orows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
+        for (let i = 1; i < orows.length; i++) {
+          const [date,pos,day,val] = orows[i];
+          overrideMap[date] = overrideMap[date] || {};
+          overrideMap[date][pos] = overrideMap[date][pos] || {};
+          overrideMap[date][pos][day] = (val === '1');
+        }
+      }
+    }
+
+    function renderWeek(monday) {
+      const tbl = document.getElementById('schedule'), msg = document.getElementById('message');
+      tbl.innerHTML = ''; msg.textContent = '';
+      const key = fmtDate(monday);
+      const names = scheduleMap[key];
+      if (!names) {
+        msg.textContent = 'Semana no disponible en CSV';
+        return;
+      }
+      // Header
+      let hdr = '<tr><th>Ingeniero</th>';
+      ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach((dn,i) => {
+        const d = new Date(monday);
+        d.setDate(d.getDate()+i);
+        hdr += `<th>${dn}<br>${fmtDate(d)}</th>`;
+      });
+      hdr += '<th>Hrs</th></tr>';
+      tbl.innerHTML = `<thead>${hdr}</thead><tbody></tbody>`;
+      const tb = tbl.querySelector('tbody');
+      // Rows
+      names.forEach((name,pos) => {
+        let hrs = 0;
+        let row = `<tr><td>${name}</td>`;
+        for (let d = 0; d < 7; d++) {
+          let work = (d < 6 && baseSchedule[pos][d] === 1);
+          const ov = overrideMap[key]?.[pos]?.[d];
+          if (ov !== undefined) work = ov;
+          if (work) hrs += 12;
+          row += `<td class="${work?'work':'rest'}">${work?'Turno':'Descanso'}</td>`;
+        }
+        row += `<td>${hrs}</td></tr>`;
+        tb.insertAdjacentHTML('beforeend', row);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      await loadData();
+      // inicializa en la semana de hoy
+      let mon = getMonday(new Date());
+      if (!scheduleMap[fmtDate(mon)]) mon = getMonday(parseDateDMY(weeks[0]));
+      currentMonday = mon;
+      document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
+      renderWeek(currentMonday);
+
+      document.getElementById('prev').onclick = () => {
+        currentMonday.setDate(currentMonday.getDate()-7);
+        document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
+        renderWeek(currentMonday);
+      };
+      document.getElementById('next').onclick = () => {
+        currentMonday.setDate(currentMonday.getDate()+7);
+        document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
+        renderWeek(currentMonday);
+      };
+      document.getElementById('load').onclick = () => {
+        const v = document.getElementById('weekInput').value;
+        const mon2 = getMonday(new Date(v));
+        currentMonday = mon2;
+        renderWeek(currentMonday);
+      };
+    });
+  </script>
+</body>
+</html>
