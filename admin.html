@@ -19,7 +19,6 @@
 </head>
 <body>
   <h1>Administración de Horarios</h1>
-  
   <div id="authMessage" class="message"></div>
   <div id="adminContent" style="display:none;">
     <div class="controls">
@@ -34,52 +33,49 @@
   </div>
 
   <script>
-    // Configuración
-    const PASSWORD     = 'babayaga';
-    const OWNER        = 'diochos';
-    const REPO         = 'horario-operadores';
-    const PATH         = 'overrides.csv';
     const GITHUB_TOKEN = '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';
-
+    const PASSWORD = 'babayaga';
+    const OWNER = 'diochos';
+    const REPO = 'horario-operadores';
+    const PATH = 'overrides.csv';
     const baseSchedule = [
       [1,1,1,1,0,0],[1,1,0,0,1,1],[0,0,1,1,1,1],[1,1,1,0,0,1],
       [0,1,1,1,1,0],[1,0,0,1,1,1],[1,1,1,0,0,1],[0,0,1,1,1,1],
       [1,1,0,1,1,0],[0,1,1,0,1,1]
     ];
 
-    let scheduleMap = {}, overrideMap = {}, weeks = [], currentMonday;
+    let scheduleMap = {};
+    let overrideMap = {};
+    let weeks = [];
+    let currentMonday;
+    let GITHUB_TOKEN;
 
     function fmtDate(d) {
-      const dd = ('0' + d.getDate()).slice(-2);
-      const mm = ('0' + (d.getMonth() + 1)).slice(-2);
+      const dd = ('0'+d.getDate()).slice(-2);
+      const mm = ('0'+(d.getMonth()+1)).slice(-2);
       return `${dd}/${mm}/${d.getFullYear()}`;
     }
-
     function getMonday(d) {
       const dt = new Date(d.getTime());
-      const diff = (dt.getDay() + 6) % 7;
-      dt.setDate(dt.getDate() - diff);
+      const diff = (dt.getDay()+6)%7;
+      dt.setDate(dt.getDate()-diff);
       dt.setHours(0,0,0,0);
       return dt;
     }
 
     async function loadData() {
-      // Carga schedule.csv
       let res = await fetch('schedule.csv');
       if (!res.ok) { alert('schedule.csv no encontrado'); return; }
-      const text = await res.text();
-      const rows = text.trim().split(/\r?\n/).map(r => r.split(',').map(c => c.trim()));
+      const rows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
       rows.slice(1).forEach(r => { scheduleMap[r[0]] = r.slice(1); weeks.push(r[0]); });
-
-      // Carga overrides.csv si existe
       res = await fetch(PATH);
       if (res.ok) {
-        const orows = (await res.text()).trim().split(/\r?\n/).map(r => r.split(',').map(c => c.trim()));
+        const orows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
         orows.slice(1).forEach(r => {
           const [date,pos,day,val] = r;
-          overrideMap[date] = overrideMap[date] || {};
-          overrideMap[date][pos] = overrideMap[date][pos] || {};
-          overrideMap[date][pos][day] = val === '1';
+          overrideMap[date] = overrideMap[date]||{};
+          overrideMap[date][pos] = overrideMap[date][pos]||{};
+          overrideMap[date][pos][day] = (val==='1');
         });
       }
     }
@@ -89,96 +85,81 @@
       const msg = document.getElementById('message');
       tbl.innerHTML = '';
       msg.textContent = '';
-
       const names = scheduleMap[date];
       if (!names) { msg.textContent = 'Semana no disponible'; return; }
-
-      // Encabezado
       let hdr = '<tr><th>Operador</th>';
-      ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach(d => hdr += `<th>${d}</th>`);
+      ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach(d=>hdr+=`<th>${d}</th>`);
       hdr += '<th>Hrs</th></tr>';
       tbl.innerHTML = `<thead>${hdr}</thead><tbody></tbody>`;
       const tb = tbl.querySelector('tbody');
-
-      // Filas
       names.forEach((name,pos) => {
-        let hrs = 0;
+        let hrs=0;
         let row = `<tr><td>${name}</td>`;
-        for (let d = 0; d < 7; d++) {
-          let work = (d < 6 && baseSchedule[pos][d] === 1);
-          const ov = overrideMap[date] && overrideMap[date][pos] && overrideMap[date][pos][d];
-          if (ov !== undefined) work = ov;
-          if (work) hrs += 12;
+        for (let d=0; d<7; d++) {
+          let work = (d<6 && baseSchedule[pos][d]===1);
+          const ov = overrideMap[date]&&overrideMap[date][pos]&&overrideMap[date][pos][d];
+          if (ov!==undefined) work=ov;
+          if (work) hrs+=12;
           row += `<td class="${work?'work':'rest'}" data-pos="${pos}" data-day="${d}">${work?'Turno':'Descanso'}</td>`;
         }
         row += `<td>${hrs}</td></tr>`;
-        tb.insertAdjacentHTML('beforeend', row);
+        tb.insertAdjacentHTML('beforeend',row);
       });
-
-      // Toggle click
-      tb.querySelectorAll('td[data-pos]').forEach(td => td.addEventListener('click', () => {
-        const pos = td.dataset.pos;
-        const day = td.dataset.day;
-        const date = fmtDate(currentMonday);
-        overrideMap[date] = overrideMap[date] || {};
-        overrideMap[date][pos] = overrideMap[date][pos] || {};
+      tb.querySelectorAll('td[data-pos]').forEach(td=>td.onclick=()=>{
+        const pos=td.dataset.pos, day=td.dataset.day, date=fmtDate(currentMonday);
+        overrideMap[date] = overrideMap[date]||{};
+        overrideMap[date][pos] = overrideMap[date][pos]||{};
         const cur = overrideMap[date][pos][day];
-        overrideMap[date][pos][day] = cur === undefined ? !(baseSchedule[pos][day] === 1) : !cur;
+        overrideMap[date][pos][day] = cur===undefined?!(baseSchedule[pos][day]===1):!cur;
         const w = overrideMap[date][pos][day];
-        td.textContent = w ? 'Turno' : 'Descanso';
-        td.className = w ? 'work' : 'rest';
-      }));
+        td.textContent = w?'Turno':'Descanso'; td.className = w?'work':'rest';
+      });
     }
 
     async function saveChanges() {
-      const msgEl = document.getElementById('message'); msgEl.textContent = ''; msgEl.style.color = 'red';
+      const msgEl = document.getElementById('message'); msgEl.textContent=''; msgEl.style.color='red';
       const dateKey = fmtDate(currentMonday);
-
       let csv = 'Fecha,Pos,Day,Val\n';
-      Object.entries(overrideMap).forEach(([date,posMap]) => {
-        Object.entries(posMap).forEach(([pos,days]) => {
-          Object.entries(days).forEach(([day,val]) => {
-            csv += `${date},${pos},${day},${val?1:0}\n`;
-          });
+      Object.entries(overrideMap).forEach(([date,posMap])=>{
+        Object.entries(posMap).forEach(([pos,days])=>{
+          Object.entries(days).forEach(([day,val])=>{ csv += `${date},${pos},${day},${val?1:0}\n`; });
         });
       });
-
       const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}`;
       try {
-        let r = await fetch(apiUrl, { headers: { Authorization: `token ${GITHUB_TOKEN}` } });
+        let r = await fetch(apiUrl, { headers:{Authorization:`token ${GITHUB_TOKEN}`} });
         let sha = null;
-        if (r.ok) {
-          const meta = await r.json(); sha = meta.sha;
-        } else if (r.status !== 404) {
-          throw new Error(`Lectura overrides.csv: ${r.status}`);
-        }
+        if (r.ok) { const meta = await r.json(); sha=meta.sha; }
+        else if (r.status!==404) throw new Error(`Lectura overrides.csv: ${r.status}`);
         const content = btoa(unescape(encodeURIComponent(csv)));
-        const payload = { message: `Actualiza overrides ${dateKey}`, content };
-        if (sha) payload.sha = sha;
-        r = await fetch(apiUrl, {
-          method: 'PUT', headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
+        const payload = { message:`Actualiza overrides ${dateKey}`, content };
+        if (sha) payload.sha=sha;
+        r = await fetch(apiUrl, { method:'PUT', headers:{Authorization:`token ${GITHUB_TOKEN}`, 'Content-Type':'application/json'}, body:JSON.stringify(payload)});
         if (!r.ok) throw new Error(`PUT overrides.csv: ${r.status}`);
-        msgEl.style.color = 'green'; msgEl.textContent = 'Cambios guardados correctamente.';
-      } catch (e) {
-        msgEl.textContent = `Error: ${e.message}`;
-      }
+        msgEl.style.color='green'; msgEl.textContent='Cambios guardados correctamente.';
+      } catch(e) { msgEl.textContent=`Error: ${e.message}`; }
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
-      const pwd = prompt('Ingrese contraseña:');
-      if (pwd !== PASSWORD) { document.getElementById('authMessage').textContent = 'Acceso denegado'; return; }
-      document.getElementById('adminContent').style.display = 'block';
+    document.addEventListener('DOMContentLoaded',async()=>{
+      const pwd=prompt('Ingrese contraseña:');
+      if(pwd!==PASSWORD){ document.getElementById('authMessage').textContent='Acceso denegado'; return; }
+      GITHUB_TOKEN = localStorage.getItem('gh_pat');
+      if(!GITHUB_TOKEN) {
+        const tok = prompt('Ingresa tu PAT con scope repo:');
+        if(!tok) { document.getElementById('authMessage').textContent='Token requerido'; return; }
+        GITHUB_TOKEN = tok;
+        localStorage.setItem('gh_pat', tok);
+      }
+      document.getElementById('adminContent').style.display='block';
       await loadData();
-      let mon = getMonday(new Date());
-      if (!scheduleMap[fmtDate(mon)]) mon = getMonday(new Date(weeks[0].split('/').reverse().join('-')));
-      currentMonday = mon;
-      document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
+      let mon=getMonday(new Date()); if(!scheduleMap[fmtDate(mon)]) mon=getMonday(new Date(weeks[0].split('/').reverse().join('-')));
+      currentMonday=mon;
+      document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10);
       renderTable(fmtDate(currentMonday));
-      document.getElementById('prev').onclick = () => { currentMonday.setDate(currentMonday.getDate()-7); document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10); renderTable(fmtDate(currentMonday)); };
-      document.getElementById('next').onclick = () => { currentMonday.setDate(currentMonday.getDate()+7); document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10); renderTable(fmtDate(currentMonday)); };
-      document.getElementById('load').onclick = () => { const d=new Date(document.getElementById('weekInput').value); currentMonday=getMonday(d); renderTable(fmtDate(currentMonday)); };
-      document.getElementById('saveChanges').onclick = saveChanges;
+      document.getElementById('prev').onclick=()=>{ currentMonday.setDate(currentMonday.getDate()-7); document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10); renderTable(fmtDate(currentMonday)); };
+      document.getElementById('next').onclick=()=>{ currentMonday.setDate(currentMonday.getDate()+7); document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10); renderTable(fmtDate(currentMonday)); };
+      document.getElementById('load').onclick=()=>{ const d=new Date(document.getElementById('weekInput').value); currentMonday=getMonday(d); renderTable(fmtDate(currentMonday)); };
+      document.getElementById('saveChanges').onclick=saveChanges;
     });
   </script>
 </body>
