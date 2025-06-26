@@ -1,0 +1,146 @@
+<!--
+README:
+Esta página está diseñada para GitHub Pages. Permite visualizar el horario semanal de 10 operadores (8 de producción + 2 de oficios varios),
+rotando automáticamente los nombres semana a semana, manteniendo fija la matriz de turnos (4 días de trabajo de 12h y 2 de descanso).
+
+Cómo usar:
+1. Copia este archivo como `index.html` en tu repo de GitHub Pages.
+2. Ajusta la lista `names` y la matriz `baseSchedule` según tus operadores y patrón de turnos.
+3. Opcional: define overrides en la constante `overrides` para modificar una semana específica.
+4. Publícalo en GitHub Pages. Los colaboradores sólo ven la tabla; quienes tengan acceso al repo pueden cambiar `overrides` o `names`.
+
+Formato de semana:
+- Selecciona con el input de fecha (semana ISO). La tabla se actualizará.
+- Domingo es descanso para todos.
+
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Horario Semanal de Operadores</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    h1 { margin-bottom: .5rem; }
+    label { display: block; margin-bottom: 1rem; }
+    table { border-collapse: collapse; width: 100%; max-width: 800px; }
+    th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: center; }
+    th { background: #f0f0f0; }
+    .off { background: #fff; }
+    .on { background: #ffd; } /* amarillo suave */
+  </style>
+</head>
+<body>
+  <h1>Horario Semanal de Operadores</h1>
+  <label>
+    Escoge semana (fecha de inicio Lunes):
+    <input type="date" id="weekStart" />
+    <button id="load">Cargar</button>
+  </label>
+  <div id="schedule"></div>
+
+  <script>
+    // Patrón de turnos fijo: 6 columnas Lunes..Sábado (domingo todos descansan).
+    // 1 = trabaja 12h, 0 = descansa.
+    const baseSchedule = [
+      [0,0,1,1,1,1], // fila1: descansa L-M
+      [1,0,0,1,1,1], // fila2: descansa M-X
+      [1,1,0,0,1,1], // fila3: descansa X-J
+      [1,1,1,0,0,1], // fila4: descansa J-V
+      [1,1,1,1,0,0], // fila5: descansa V-S
+      [0,1,1,1,1,0], // fila6: descansa S-L
+      [0,1,0,1,1,1], // fila7: descansa L-X
+      [1,0,1,0,1,1], // fila8: descansa M-J
+      [1,1,0,1,0,1], // fila9: descansa X-V
+      [1,1,1,0,1,0]  // fila10: descansa J-S
+    ];
+    // Lista de nombres en orden inicial (semana 1).
+    const names = [
+      "Eduardo", "Gabriel", "Rebeca", "David",
+      "Enrique", "Mariel", "René", "Josué",
+      "Heidi", "Ruben"
+    ];
+
+    // Overrides opcionales por semana (ISO date yyyy-mm-dd). Permite:
+    // - override.days = { nombre: [0,1,2..5] } índices de columnas para forzar trabajo/descanso
+    // - override.swap = [[filaA, filaB], ...] intercambios de nombres antes de render.
+    const overrides = {
+      // ejemplo:
+      // "2025-06-30": {
+      //   days: { "David": [0,1] },
+      //   swap: [["Rebeca","Gabriel"]]
+      // }
+    };
+
+    // Calcula diferencia en semanas ISO entre dos fechas
+    function isoWeekNumber(d) {
+      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const dayNum = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+      return Math.ceil((((date - yearStart) / 86400000) + 1)/7);
+    }
+    function weekDiff(start, current) {
+      const yDiff = current.getFullYear() - start.getFullYear();
+      return yDiff*52 + (isoWeekNumber(current) - isoWeekNumber(start));
+    }
+
+    document.getElementById('load').onclick = () => {
+      const inp = document.getElementById('weekStart').value;
+      if (!inp) return alert('Selecciona una fecha de lunes');
+      const start = new Date(inp);
+      // Ajustar al lunes si no lo es
+      if (start.getDay()!==1) { alert('La fecha debe ser lunes.'); return; }
+      renderWeek(start);
+    };
+
+    function renderWeek(monday) {
+      const container = document.getElementById('schedule');
+      container.innerHTML = '';
+      // calcular offset de semanas desde una semana 1 base
+      const base = new Date('2025-06-30'); // semana1 base
+      const offs = ((weekDiff(base, monday) % names.length)+names.length)%names.length;
+      // rotar nombres
+      let order = names.slice(offs).concat(names.slice(0,offs));
+      // aplicar swap overrides
+      const ymd = monday.toISOString().slice(0,10);
+      if (overrides[ymd] && overrides[ymd].swap) {
+        overrides[ymd].swap.forEach(([a,b])=>{
+          const i = order.indexOf(a), j = order.indexOf(b);
+          if(i>=0&&j>=0) [order[i],order[j]]=[order[j],order[i]];
+        });
+      }
+      // construir tabla
+      const tbl = document.createElement('table');
+      const thead = document.createElement('thead');
+      thead.innerHTML = `<tr><th>Sindicalizado</th><th>${monday.toLocaleDateString()}</th>`+
+        ['Mar','Mié','Jue','Vie','Sáb','Dom'].map(h=>`<th>${h}</th>`).join('')+
+        `<th>Hrs</th></tr>`;
+      tbl.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      for(let i=0;i<10;i++){
+        const row = document.createElement('tr');
+        const name = order[i];
+        row.innerHTML = `<td>${name}</td>`;
+        let hrs=0;
+        for(let d=0;d<6;d++){
+          let on = baseSchedule[i][d];
+          // override days si existe
+          if(overrides[ymd] && overrides[ymd].days && overrides[ymd].days[name]!==undefined) {
+            on = overrides[ymd].days[name].includes(d)?1:0;
+          }
+          row.innerHTML += `<td class='${on? 'on':'off'}'>${on? '12':''}</td>`;
+          hrs += on?12:0;
+        }
+        // domingo
+        row.innerHTML += `<td class='off'></td>`;
+        row.innerHTML += `<td>${hrs}</td>`;
+        tbody.appendChild(row);
+      }
+      tbl.appendChild(tbody);
+      container.appendChild(tbl);
+    }
+  </script>
+</body>
+</html>
