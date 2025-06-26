@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Administración de Horario</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    h1 { margin-bottom: .5rem; }
+    table { border-collapse: collapse; width: 100%; max-width: 800px; margin-bottom: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: center; cursor: pointer; }
+    th { background: #f0f0f0; cursor: default; }
+    .rest { background: #f88; }
+    .work { background: #8f8; }
+    .controls { margin-bottom: 1rem; }
+    .controls button, .controls input { margin-right: .5rem; }
+  </style>
+</head>
+<body>
+  <h1>Administración de Horario Semanal</h1>
+  <div class="controls">
+    <button id="prev">« Semana anterior</button>
+    <button id="next">Semana siguiente »</button>
+    <label>Fecha:<input type="date" id="weekInput"/></label>
+    <button id="load">Cargar</button>
+    <button id="save">Guardar CSV</button>
+  </div>
+  <div id="schedule"></div>
+  <script>
+    const baseSchedule = [
+      [1,1,1,1,0,0],[1,1,0,0,1,1],[0,0,1,1,1,1],[1,1,1,0,0,1],
+      [0,1,1,1,1,0],[1,0,0,1,1,1],[1,1,1,0,0,1],[0,0,1,1,1,1],
+      [1,1,0,1,1,0],[0,1,1,0,1,1]
+    ];
+    const names = ["Eduardo","Gabriel","Rebeca","David","Enrique","Mariel","René","Josué","Heidi","Ruben"];
+    // Almacen de overrides: { 'YYYY-MM-DD': { name: [days...] } }
+    let overrides = {};
+    function getMonday(d) {
+      const dt = new Date(d);
+      const day = dt.getDay(), diff = (day + 6) % 7;
+      dt.setDate(dt.getDate() - diff);
+      return dt;
+    }
+    function weekIdx(monday) {
+      const base = new Date('2025-06-30');
+      return Math.floor((monday - getMonday(base)) / (7*86400000));
+    }
+    function renderWeek(monday) {
+      const idx = weekIdx(monday), rot = ((idx % names.length) + names.length) % names.length;
+      const order = names.slice(rot).concat(names.slice(0,rot));
+      const ymd = monday.toISOString().slice(0,10);
+      if (!overrides[ymd]) overrides[ymd] = {};
+      document.getElementById('schedule').innerHTML = '';
+      const tbl = document.createElement('table');
+      let hdr = '<tr><th>Operador</th>';
+      for(let i=0;i<7;i++){ const d=new Date(monday); d.setDate(d.getDate()+i);
+        const labels=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+        hdr += `<th>${labels[i]}<br>${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</th>`;
+      }
+      hdr += '<th>Hrs</th></tr>';
+      tbl.innerHTML = '<thead>'+hdr+'</thead><tbody></tbody>';
+      const tbody = tbl.querySelector('tbody');
+      order.forEach((name,i)=>{
+        let hrs=0;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${name}</td>`;
+        for(let d=0;d<7;d++){
+          const work = d<6 ? baseSchedule[i][d] : 0;
+          const custom = overrides[ymd][name]||[];
+          const on = custom.includes(d)?1:work;
+          const cls=on?'work':'rest', txt=on?'Turno':'Descanso';
+          if(on) hrs+=12;
+          tr.innerHTML += `<td class="${cls}" data-name="${name}" data-day="${d}">${txt}</td>`;
+        }
+        tr.innerHTML += `<td>${hrs}</td>`;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('schedule').appendChild(tbl);
+      // Agregar listeners
+      document.querySelectorAll('td[data-name]').forEach(td=>{
+        td.onclick = ()=>{
+          const name=td.dataset.name, d=+td.dataset.day;
+          const list = overrides[monday.toISOString().slice(0,10)][name]||[];
+          const ix=list.indexOf(d);
+          if(ix>=0) list.splice(ix,1); else list.push(d);
+          overrides[monday.toISOString().slice(0,10)][name]=list;
+          renderWeek(monday);
+        };
+      });
+    }
+    let currentMonday;
+    document.getElementById('prev').onclick=()=>{currentMonday.setDate(currentMonday.getDate()-7);update();};
+    document.getElementById('next').onclick=()=>{currentMonday.setDate(currentMonday.getDate()+7);update();};
+    document.getElementById('load').onclick=()=>{const v=document.getElementById('weekInput').value; if(v){currentMonday=getMonday(v);update();}};
+    document.getElementById('save').onclick=()=>{
+      let csv='name,date,day,type\n';
+      Object.entries(overrides).forEach(([date, map])=>{
+        Object.entries(map).forEach(([name, days])=>{
+          days.forEach(d=>{ csv+=`${name},${date},${d},${baseSchedule[names.indexOf(name)][d]?'Descanso':'Turno'}\n`; });
+        });
+      });
+      const blob=new Blob([csv],{type:'text/csv'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+      a.download='overrides.csv'; a.click();
+    };
+    function update(){document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10); renderWeek(currentMonday);}    
+    window.addEventListener('DOMContentLoaded',()=>{currentMonday=getMonday(new Date());update();});
+  </script>
+</body>
+</html>
