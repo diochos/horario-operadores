@@ -4,32 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Horario Semanal de Operadores</title>
-  <style>
-    body { font-family: sans-serif; padding: 1rem; }
-    h1 { margin-bottom: .5rem; }
-    .controls { margin-bottom: 1rem; }
-    .controls button, .controls input { margin-right: 1rem; }
-    .message { color: red; font-weight: bold; margin-bottom: 1rem; }
-    table { border-collapse: collapse; width: 100%; max-width: 100%; overflow-x: auto; display: block; }
-    th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: center; white-space: nowrap; }
-    th { background: #f0f0f0; }
-    .work { background: #8f8; }
-    .rest { background: #f88; }
-  </style>
-  <link rel="stylesheet" href="estilos.css">
-
+  <link rel="stylesheet" href="estilos.css" />
 </head>
 <body>
   <nav class="navbar">
-  <div class="nav-container">
-    <span class="nav-logo">Linea 8</span>
-    <div class="nav-links">
-      <a href="index.html" class="nav-link">Operadores</a>
-      <a href="ing.html" class="nav-link">Ingenieros de Proceso</a>
-      <a href="admin.html" class="nav-link">Administrar Horarios</a>
+    <div class="nav-container">
+      <span class="nav-logo">Linea 8</span>
+      <div class="nav-links">
+        <a href="index.html" class="nav-link">Operadores</a>
+        <a href="ing.html" class="nav-link">Ingenieros de Proceso</a>
+        <a href="admin.html" class="nav-link">Administrar Horarios</a>
+      </div>
     </div>
-  </div>
-</nav>
+  </nav>
 
   <h1>Horario Semanal de Operadores</h1>
   <div class="controls">
@@ -38,99 +25,129 @@
     <label>Fecha:<input type="date" id="weekInput" /></label>
     <button id="load">Cargar semana</button>
   </div>
-  <div id="message"></div>
+  <div id="message" class="message"></div>
   <table id="schedule"></table>
 
   <script>
+    const OWNER = 'diochos';
+    const REPO = 'horario-operadores';
+    const PATH_OVERRIDES = 'overrides.csv';
     const baseSchedule = [
       [1,1,1,1,0,0],[1,1,0,0,1,1],[0,0,1,1,1,1],[1,1,1,0,0,1],
       [0,1,1,1,1,0],[1,0,0,1,1,1],[1,1,1,0,0,1],[0,0,1,1,1,1],
       [1,1,0,1,1,0],[0,1,1,0,1,1]
     ];
-    let scheduleMap={}, overrideMap={}, weeks=[];
-    let currentMonday;
 
-    function parseDateDMY(str) {
-      const [d,m,y]=str.split('/').map(Number);
-      return new Date(y, m-1, d);
-    }
+    let scheduleMap = {}, overrideMap = {}, weeks = [], currentMonday;
+
     function fmtDate(d) {
-      const dd=('0'+d.getDate()).slice(-2);
-      const mm=('0'+(d.getMonth()+1)).slice(-2);
+      const dd = ('0'+d.getDate()).slice(-2);
+      const mm = ('0'+(d.getMonth()+1)).slice(-2);
       return `${dd}/${mm}/${d.getFullYear()}`;
     }
     function getMonday(d) {
-      const dt=new Date(d.getTime());
-      const diff=(dt.getDay()+6)%7;
+      const dt = new Date(d.getTime());
+      const diff = (dt.getDay()+6)%7;
       dt.setDate(dt.getDate()-diff);
       dt.setHours(0,0,0,0);
       return dt;
     }
 
-    async function loadData() {
-      let res=await fetch('schedule.csv');
-      if(!res.ok) throw new Error('schedule.csv no encontrado');
-      let rows=(await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
-      for(let i=1;i<rows.length;i++){const [date,...names]=rows[i];scheduleMap[date]=names;weeks.push(date);}      
-      res=await fetch('overrides.csv');
-      if(res.ok){
-        let orows=(await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
-        for(let i=1;i<orows.length;i++){const [date,pos,day,val]=orows[i];overrideMap[date]=overrideMap[date]||{};overrideMap[date][pos]=overrideMap[date][pos]||{};overrideMap[date][pos][day]= val==='1';}
+    async function loadSchedule() {
+      const res = await fetch('schedule.csv');
+      if (!res.ok) throw new Error('schedule.csv no encontrado');
+      const text = await res.text();
+      const rows = text.trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
+      scheduleMap = {}; weeks = [];
+      rows.slice(1).forEach(r => {
+        scheduleMap[r[0]] = r.slice(1);
+        weeks.push(r[0]);
+      });
+    }
+
+    async function loadOverrides() {
+      const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH_OVERRIDES}`;
+      try {
+        const res = await fetch(apiUrl, { headers:{ Accept:'application/vnd.github.v3+json' } });
+        if (res.status===404) { overrideMap = {}; return; }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const j = await res.json();
+        const csv = atob(j.content.replace(/\n/g,''));
+        overrideMap = {};
+        csv.trim().split(/\r?\n/).slice(1).forEach(line => {
+          const [date,pos,day,val] = line.split(',');
+          overrideMap[date] = overrideMap[date]||{};
+          overrideMap[date][pos] = overrideMap[date][pos]||{};
+          overrideMap[date][pos][day] = (val==='1');
+        });
+      } catch(e) {
+        console.error('Error cargando overrides:', e);
+        overrideMap = {};
       }
     }
 
-    function renderWeek(monday){
-      const table=document.getElementById('schedule'),msg=document.getElementById('message');
-      table.innerHTML='';msg.textContent='';
-      const key=fmtDate(monday);
-      const names=scheduleMap[key];
-      if(!names){ msg.textContent='Semana no disponible en CSV'; return; }
-      let hdr='<tr><th>Operador</th>';
-      for(let i=0;i<7;i++){const d=new Date(monday);d.setDate(d.getDate()+i);hdr+=`<th>${['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][i]}<br>${fmtDate(d)}</th>`;}
-      hdr+='<th>Hrs</th></tr>';
-      table.innerHTML=`<thead>${hdr}</thead><tbody></tbody>`;
-      const tb=table.querySelector('tbody');
-      for(let pos=0;pos<10;pos++){
-        let row=`<tr><td>${names[pos]||''}</td>`;let hrs=0;
-        for(let d=0;d<7;d++){
-          let work=(d<6 && baseSchedule[pos][d]===1);
-          const ov=overrideMap[key]&&overrideMap[key][String(pos)]&&overrideMap[key][String(pos)][String(d)];
-          if(ov!==undefined) work=ov;
-          if(work) hrs+=12;
-          row+=`<td class="${work?'work':'rest'}">${work?'Turno':'Descanso'}</td>`;
+    async function renderWeek(monday) {
+      const dateKey = fmtDate(monday);
+      // cada vez que renderizamos, recargamos overrides:
+      await loadOverrides();
+
+      const tbl = document.getElementById('schedule');
+      const msg = document.getElementById('message');
+      tbl.innerHTML = ''; msg.textContent = '';
+
+      const names = scheduleMap[dateKey];
+      if (!names) { msg.textContent = 'Semana no disponible'; return; }
+
+      // construir header
+      let hdr = '<tr><th>Operador</th>';
+      ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach((dn,i)=>{
+        const d = new Date(monday); d.setDate(d.getDate()+i);
+        hdr += `<th>${dn}<br>${fmtDate(d)}</th>`;
+      });
+      hdr += '<th>Hrs</th></tr>';
+      tbl.innerHTML = `<thead>${hdr}</thead><tbody></tbody>`;
+
+      const tb = tbl.querySelector('tbody');
+      names.forEach((name,pos)=>{
+        let hrs=0, row=`<tr><td>${name}</td>`;
+        for (let d=0; d<7; d++) {
+          let work = (d<6 && baseSchedule[pos][d]===1);
+          const ov = overrideMap[dateKey]?.[pos]?.[d];
+          if (ov!==undefined) work = ov;
+          if (work) hrs+=12;
+          row += `<td class="${work?'work':'rest'}">${work?'Turno':'Descanso'}</td>`;
         }
-        row+=`<td>${hrs}</td></tr>`;
-        tb.insertAdjacentHTML('beforeend',row);
-      }
+        row += `<td>${hrs}</td></tr>`;
+        tb.insertAdjacentHTML('beforeend', row);
+      });
     }
 
-    document.addEventListener('DOMContentLoaded',async()=>{
-      await loadData();
-      // Init currentMonday to today's week
-      let mon=getMonday(new Date());
-      const key=fmtDate(mon);
-      if(!scheduleMap[key]) mon=getMonday(parseDateDMY(weeks[0]));
-      currentMonday=mon;
-      document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10);
-      renderWeek(currentMonday);
-      // Bind nav
-      document.getElementById('prev').addEventListener('click',()=>{
+    document.addEventListener('DOMContentLoaded', async ()=> {
+      await loadSchedule();
+      // init currentMonday
+      let mon = getMonday(new Date());
+      if (!scheduleMap[fmtDate(mon)]) mon = getMonday(parseDateDMY(weeks[0]));
+      currentMonday = mon;
+
+      document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
+      await renderWeek(currentMonday);
+
+      document.getElementById('prev').onclick = async ()=>{
         currentMonday.setDate(currentMonday.getDate()-7);
-        document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10);
-        renderWeek(currentMonday);
-      });
-      document.getElementById('next').addEventListener('click',()=>{
+        document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
+        await renderWeek(currentMonday);
+      };
+      document.getElementById('next').onclick = async ()=>{
         currentMonday.setDate(currentMonday.getDate()+7);
-        document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10);
-        renderWeek(currentMonday);
-      });
-      document.getElementById('load').addEventListener('click',()=>{
-        const v=document.getElementById('weekInput').value;
-        if(!v) return;
-        const mon2=getMonday(new Date(v));
-        currentMonday=mon2;
-        renderWeek(currentMonday);
-      });
+        document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
+        await renderWeek(currentMonday);
+      };
+      document.getElementById('load').onclick = async ()=>{
+        const v = document.getElementById('weekInput').value;
+        if (!v) return;
+        currentMonday = getMonday(new Date(v));
+        await renderWeek(currentMonday);
+      };
     });
   </script>
 </body>
