@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Administración de Horarios</title>
+  
   <style>
     body { font-family: sans-serif; padding: 1rem; }
     h1 { margin-bottom: .5rem; }
@@ -16,8 +17,21 @@
     .work { background: #8f8; cursor: pointer; }
     .rest { background: #f88; cursor: pointer; }
   </style>
+  <link rel="stylesheet" href="estilos.css">
+
 </head>
 <body>
+    <nav class="navbar">
+  <div class="nav-container">
+    <span class="nav-logo">Bepensa</span>
+    <div class="nav-links">
+      <a href="index.html" class="nav-link">Operadores</a>
+      <a href="ing.html" class="nav-link">Ingenieros de Proceso</a>
+      <a href="admin.html" class="nav-link">Administrar Horarios</a>
+    </div>
+  </div>
+</nav>
+
   <h1>Administración de Horarios</h1>
   <div id="authMessage" class="message"></div>
   <div id="adminContent" style="display:none;">
