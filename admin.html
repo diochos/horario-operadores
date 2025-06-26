@@ -71,7 +71,7 @@
       });
 
       // cargar overrides.csv local sin usar API
-      res = await fetch(PATH);
+      res = await fetch('overrides.csv?ts=' + Date.now(), { cache: 'no-store' });
       if (!res.ok) return;  // si no existe o 401, ignorar
       let orows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(','));
       overrideMap = {};

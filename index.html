@@ -72,7 +72,7 @@
       if(!res.ok) throw new Error('schedule.csv no encontrado');
       let rows=(await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
       for(let i=1;i<rows.length;i++){const [date,...names]=rows[i];scheduleMap[date]=names;weeks.push(date);}      
-      res=await fetch('overrides.csv');
+      res = await fetch('overrides.csv?ts=' + Date.now(), { cache: 'no-store' });
       if(res.ok){
         let orows=(await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
         for(let i=1;i<orows.length;i++){const [date,pos,day,val]=orows[i];overrideMap[date]=overrideMap[date]||{};overrideMap[date][pos]=overrideMap[date][pos]||{};overrideMap[date][pos][day]= val==='1';}
