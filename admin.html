@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="estilos.css" />
 </head>
 <body>
+
   <nav class="navbar">
     <div class="nav-container">
       <span class="nav-logo">Bepensa</span>
@@ -53,39 +54,45 @@
     }
     function getMonday(d) {
       const dt = new Date(d.getTime());
-      const diff = (dt.getDay()+6)%7;
-      dt.setDate(dt.getDate()-diff);
+      dt.setDate(dt.getDate() - ((dt.getDay()+6)%7));
       dt.setHours(0,0,0,0);
       return dt;
     }
 
     async function loadData() {
+      // cargar schedule.csv
       let res = await fetch('schedule.csv');
-      if (!res.ok) { alert('schedule.csv no encontrado'); return; }
-      const rows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
-      rows.slice(1).forEach(r => { scheduleMap[r[0]] = r.slice(1); weeks.push(r[0]); });
+      if (!res.ok) return alert('schedule.csv no encontrado');
+      let rows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(','));
+      rows.slice(1).forEach(r => {
+        const date = r[0], names = r.slice(1);
+        scheduleMap[date] = names;
+        weeks.push(date);
+      });
 
+      // cargar overrides.csv local sin usar API
       res = await fetch(PATH);
-      if (res.ok) {
-        const orows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
-        orows.slice(1).forEach(r => {
-          const [date,pos,day,val] = r;
-          overrideMap[date] = overrideMap[date]||{};
-          overrideMap[date][pos] = overrideMap[date][pos]||{};
-          overrideMap[date][pos][day] = (val==='1');
-        });
-      }
+      if (!res.ok) return;  // si no existe o 401, ignorar
+      let orows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(','));
+      overrideMap = {};
+      orows.slice(1).forEach(r => {
+        const [date,pos,day,val] = r;
+        overrideMap[date] = overrideMap[date]||{};
+        overrideMap[date][pos] = overrideMap[date][pos]||{};
+        overrideMap[date][pos][day] = (val==='1');
+      });
     }
 
     function renderTable(dateKey) {
-      const tbl = document.getElementById('overrideTable'), msg = document.getElementById('message');
+      const tbl = document.getElementById('overrideTable'),
+            msg = document.getElementById('message');
       tbl.innerHTML = ''; msg.textContent = '';
       const names = scheduleMap[dateKey];
-      if (!names) { msg.textContent = 'Semana no disponible'; return; }
+      if (!names) return msg.textContent='Semana no disponible';
 
-      // Header con día y fecha
+      // encabezado
       let hdr = '<tr><th>Operador</th>';
-      ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach((dn,i) => {
+      ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach((dn,i)=>{
         const d = new Date(currentMonday);
         d.setDate(d.getDate()+i);
         hdr += `<th>${dn}<br>${fmtDate(d)}</th>`;
@@ -94,41 +101,41 @@
       tbl.innerHTML = `<thead>${hdr}</thead><tbody></tbody>`;
 
       const tb = tbl.querySelector('tbody');
-      names.forEach((name,pos) => {
+      names.forEach((name,pos)=>{
         let hrs=0, row=`<tr><td>${name}</td>`;
-        for (let d=0; d<7; d++) {
-          let work = (d<6 && baseSchedule[pos][d]===1);
+        for(let d=0;d<7;d++){
+          let work = d<6 && baseSchedule[pos][d]===1;
           const ov = overrideMap[dateKey]?.[pos]?.[d];
           if (ov!==undefined) work=ov;
           if (work) hrs+=12;
           row += `<td class="${work?'work':'rest'}" data-pos="${pos}" data-day="${d}">${work?'Turno':'Descanso'}</td>`;
         }
         row += `<td>${hrs}</td></tr>`;
-        tb.insertAdjacentHTML('beforeend', row);
+        tb.insertAdjacentHTML('beforeend',row);
       });
 
-      // Toggle cells
-      tb.querySelectorAll('td[data-pos]').forEach(td => {
-        td.addEventListener('click', () => {
-          const pos = td.dataset.pos, day = td.dataset.day, date = dateKey;
-          overrideMap[date] = overrideMap[date] || {};
-          overrideMap[date][pos] = overrideMap[date][pos] || {};
+      tb.querySelectorAll('td[data-pos]').forEach(td=>{
+        td.onclick = ()=>{
+          const pos=td.dataset.pos, day=td.dataset.day, date=dateKey;
+          overrideMap[date] = overrideMap[date]||{};
+          overrideMap[date][pos] = overrideMap[date][pos]||{};
           const cur = overrideMap[date][pos][day];
           overrideMap[date][pos][day] = cur===undefined ? !(baseSchedule[pos][day]===1) : !cur;
           const w = overrideMap[date][pos][day];
           td.textContent = w?'Turno':'Descanso';
           td.className = w?'work':'rest';
-        });
+        };
       });
     }
 
     async function saveChanges() {
-      const msgEl = document.getElementById('message'); msgEl.textContent=''; msgEl.style.color='red';
+      const msgEl = document.getElementById('message');
+      msgEl.textContent=''; msgEl.style.color='red';
       const dateKey = fmtDate(currentMonday);
       let csv = 'Fecha,Pos,Day,Val\n';
-      Object.entries(overrideMap).forEach(([date,posMap]) => {
-        Object.entries(posMap).forEach(([pos,days]) => {
-          Object.entries(days).forEach(([day,val]) => {
+      Object.entries(overrideMap).forEach(([date,posMap])=>{
+        Object.entries(posMap).forEach(([pos,days])=>{
+          Object.entries(days).forEach(([day,val])=>{
             csv += `${date},${pos},${day},${val?1:0}\n`;
           });
         });
@@ -136,6 +143,7 @@
 
       const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}`;
       try {
+        // lectura SHA
         let r = await fetch(apiUrl, {
           headers: {
             Authorization: `token ${GITHUB_TOKEN}`,
@@ -143,67 +151,70 @@
           }
         });
         let sha = null;
-        if (r.ok) { sha = (await r.json()).sha; }
+        if (r.ok) sha = (await r.json()).sha;
         else if (r.status!==404) throw new Error(`Lectura overrides.csv: ${r.status}`);
 
+        // payload
         const content = btoa(unescape(encodeURIComponent(csv)));
         const payload = { message:`Actualiza overrides ${dateKey}`, content };
         if (sha) payload.sha = sha;
 
+        // PUT
         r = await fetch(apiUrl, {
-          method: 'PUT',
-          headers: {
+          method:'PUT',
+          headers:{
             Authorization: `token ${GITHUB_TOKEN}`,
             Accept: 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json'
+            'Content-Type':'application/json'
           },
           body: JSON.stringify(payload)
         });
         if (!r.ok) throw new Error(`PUT overrides.csv: ${r.status}`);
-        msgEl.style.color='green'; msgEl.textContent='Cambios guardados correctamente.';
+
+        msgEl.style.color='var(--color-success)';
+        msgEl.textContent='Cambios guardados correctamente.';
       } catch(e) {
         msgEl.textContent = `Error: ${e.message}`;
       }
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
-      const pwd = prompt('Ingrese contraseña:');
-      if (pwd!==PASSWORD) {
+    document.addEventListener('DOMContentLoaded',async()=>{
+      const pwd=prompt('Ingrese contraseña:');
+      if(pwd!==PASSWORD){
         document.getElementById('authMessage').textContent='Acceso denegado';
         return;
       }
       GITHUB_TOKEN = localStorage.getItem('gh_pat');
-      if (!GITHUB_TOKEN) {
+      if(!GITHUB_TOKEN){
         const tok = prompt('Ingresa tu PAT con scope repo:');
-        if (!tok) {
+        if(!tok){
           document.getElementById('authMessage').textContent='Token requerido';
           return;
         }
-        GITHUB_TOKEN = tok;
-        localStorage.setItem('gh_pat', tok);
+        GITHUB_TOKEN=tok;
+        localStorage.setItem('gh_pat',tok);
       }
+
       document.getElementById('adminContent').style.display='block';
       await loadData();
 
       let mon = getMonday(new Date());
-      if (!scheduleMap[fmtDate(mon)]) {
-        mon = getMonday(new Date(weeks[0].split('/').reverse().join('-')));
-      }
+      if(!scheduleMap[fmtDate(mon)]) mon = getMonday(new Date(weeks[0].split('/').reverse().join('-')));
       currentMonday = mon;
       document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
       renderTable(fmtDate(currentMonday));
 
-      document.getElementById('prev').onclick = () => {
+      document.getElementById('prev').onclick = ()=>{
         currentMonday.setDate(currentMonday.getDate()-7);
         document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
         renderTable(fmtDate(currentMonday));
       };
-      document.getElementById('next').onclick = () => {
+      document.getElementById('next').onclick = ()=>{
         currentMonday.setDate(currentMonday.getDate()+7);
         document.getElementById('weekInput').value = currentMonday.toISOString().slice(0,10);
         renderTable(fmtDate(currentMonday));
       };
-      document.getElementById('load').onclick = () => {
+      document.getElementById('load').onclick = ()=>{
         const d = new Date(document.getElementById('weekInput').value);
         currentMonday = getMonday(d);
         renderTable(fmtDate(currentMonday));
