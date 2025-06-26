@@ -27,6 +27,8 @@
       <label>Fecha:<input type="date" id="weekInput" /></label>
       <button id="load">Cargar semana</button>
       <button id="saveChanges">Guardar cambios</button>
+      <label>Generar hasta:<input type="date" id="genUntil" /></label>
+      <button id="generateSchedule">Generar hasta fecha</button>
     </div>
     <div id="message" class="message"></div>
     <table id="overrideTable"></table>
@@ -36,8 +38,7 @@
     const PASSWORD = 'babayaga';
     const OWNER = 'diochos';
     const REPO = 'horario-operadores';
-    //const PATH = 'overrides.csv';           // GitHub / servidor web
-    const PATH = 'overrides.csv';  // Ruta local para demostración
+    const PATH = 'overrides.csv'; // Ruta GitHub o local para pruebas
 
     const baseSchedule = [
       [1,1,1,1,0,0],[1,1,0,0,1,1],[0,0,1,1,1,1],[1,1,1,0,0,1],
@@ -56,6 +57,7 @@
       const mm = ('0'+(d.getMonth()+1)).slice(-2);
       return `${dd}/${mm}/${d.getFullYear()}`;
     }
+
     function getMonday(d) {
       const dt = new Date(d.getTime());
       const diff = (dt.getDay()+6)%7;
@@ -81,39 +83,48 @@
       }
     }
 
-    function renderTable(date) {
+    function renderTable(dateKey) {
       const tbl = document.getElementById('overrideTable');
       const msg = document.getElementById('message');
       tbl.innerHTML = '';
       msg.textContent = '';
-      const names = scheduleMap[date];
+      const names = scheduleMap[dateKey];
       if (!names) { msg.textContent = 'Semana no disponible'; return; }
       let hdr = '<tr><th>Operador</th>';
-      ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach(d=>hdr+=`<th>${d}</th>`);
+      for (let i=0; i<7; i++) {
+        const d = new Date(currentMonday);
+        d.setDate(d.getDate()+i);
+        const dayName = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][i];
+        hdr += `<th>${dayName}<br>${fmtDate(d)}</th>`;
+      }
       hdr += '<th>Hrs</th></tr>';
       tbl.innerHTML = `<thead>${hdr}</thead><tbody></tbody>`;
       const tb = tbl.querySelector('tbody');
-      names.forEach((name,pos) => {
-        let hrs=0;
-        let row = `<tr><td>${name}</td>`;
+      names.forEach((name,pos)=>{
+        let hrs=0; let row=`<tr><td>${name}</td>`;
         for (let d=0; d<7; d++) {
           let work = (d<6 && baseSchedule[pos][d]===1);
-          const ov = overrideMap[date]&&overrideMap[date][pos]&&overrideMap[date][pos][d];
-          if (ov!==undefined) work=ov;
+          const ov = overrideMap[dateKey] && overrideMap[dateKey][pos] && overrideMap[dateKey][pos][d];
+          if (ov!==undefined) work = ov;
           if (work) hrs+=12;
           row += `<td class="${work?'work':'rest'}" data-pos="${pos}" data-day="${d}">${work?'Turno':'Descanso'}</td>`;
         }
         row += `<td>${hrs}</td></tr>`;
         tb.insertAdjacentHTML('beforeend',row);
       });
-      tb.querySelectorAll('td[data-pos]').forEach(td=>td.onclick=()=>{
-        const pos=td.dataset.pos, day=td.dataset.day, date=fmtDate(currentMonday);
-        overrideMap[date] = overrideMap[date]||{};
-        overrideMap[date][pos] = overrideMap[date][pos]||{};
-        const cur = overrideMap[date][pos][day];
-        overrideMap[date][pos][day] = cur===undefined?!(baseSchedule[pos][day]===1):!cur;
-        const w = overrideMap[date][pos][day];
-        td.textContent = w?'Turno':'Descanso'; td.className = w?'work':'rest';
+      tb.querySelectorAll('td[data-pos]').forEach(td => {
+        td.addEventListener('click', () => {
+          const pos = td.dataset.pos;
+          const day = td.dataset.day;
+          const date = dateKey;
+          overrideMap[date] = overrideMap[date] || {};
+          overrideMap[date][pos] = overrideMap[date][pos] || {};
+          const cur = overrideMap[date][pos][day];
+          overrideMap[date][pos][day] = cur === undefined ? !(baseSchedule[pos][day] === 1) : !cur;
+          const w = overrideMap[date][pos][day];
+          td.textContent = w ? 'Turno' : 'Descanso';
+          td.className = w ? 'work' : 'rest';
+        });
       });
     }
 
@@ -130,15 +141,67 @@
       try {
         let r = await fetch(apiUrl, { headers:{Authorization:`token ${GITHUB_TOKEN}`} });
         let sha = null;
-        if (r.ok) { const meta = await r.json(); sha=meta.sha; }
-        else if (r.status!==404) throw new Error(`Lectura overrides.csv: ${r.status}`);
+        if (r.ok) { const meta = await r.json(); sha = meta.sha; }
+        else if (r.status !== 404) throw new Error(`Lectura overrides.csv: ${r.status}`);
         const content = btoa(unescape(encodeURIComponent(csv)));
-        const payload = { message:`Actualiza overrides ${dateKey}`, content };
-        if (sha) payload.sha=sha;
-        r = await fetch(apiUrl, { method:'PUT', headers:{Authorization:`token ${GITHUB_TOKEN}`, 'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        const payload = { message: `Actualiza overrides ${dateKey}`, content };
+        if (sha) payload.sha = sha;
+        r = await fetch(apiUrl, {
+          method: 'PUT',
+          headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
         if (!r.ok) throw new Error(`PUT overrides.csv: ${r.status}`);
         msgEl.style.color='green'; msgEl.textContent='Cambios guardados correctamente.';
-      } catch(e) { msgEl.textContent=`Error: ${e.message}`; }
+      } catch(e) {
+        msgEl.textContent=`Error: ${e.message}`;
+      }
+    }
+
+    async function generateScheduleUntil() {
+      const input = document.getElementById('genUntil');
+      const endDate = new Date(input.value);
+      if (isNaN(endDate)) return alert('Fecha inválida');
+
+      const lastDate = weeks.length ? new Date(weeks[weeks.length - 1].split('/').reverse().join('-')) : new Date();
+      let nextMonday = getMonday(new Date(lastDate));
+      nextMonday.setDate(nextMonday.getDate() + 7);
+
+      const template = scheduleMap[weeks[0]];
+
+      while (nextMonday <= endDate) {
+        const key = fmtDate(nextMonday);
+        if (!scheduleMap[key]) {
+          scheduleMap[key] = [...template];
+          weeks.push(key);
+        }
+        nextMonday.setDate(nextMonday.getDate() + 7);
+      }
+
+      let csv = 'Fecha,' + template.map((_, i) => `Operador${i+1}`).join(',') + '\n';
+      weeks.forEach(w => {
+        csv += `${w},${scheduleMap[w].join(',')}\n`;
+      });
+
+      const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/schedule.csv`;
+      try {
+        let r = await fetch(apiUrl, { headers:{Authorization:`token ${GITHUB_TOKEN}`} });
+        let sha = null;
+        if (r.ok) { const meta = await r.json(); sha = meta.sha; }
+        else if (r.status !== 404) throw new Error(`Lectura schedule.csv: ${r.status}`);
+        const content = btoa(unescape(encodeURIComponent(csv)));
+        const payload = { message: `Actualiza schedule hasta ${input.value}`, content };
+        if (sha) payload.sha = sha;
+        r = await fetch(apiUrl, {
+          method: 'PUT',
+          headers: { Authorization: `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!r.ok) throw new Error(`PUT schedule.csv: ${r.status}`);
+        alert('Schedule generado correctamente.');
+      } catch(e) {
+        alert(`Error: ${e.message}`);
+      }
     }
 
     document.addEventListener('DOMContentLoaded',async()=>{
@@ -161,6 +224,7 @@
       document.getElementById('next').onclick=()=>{ currentMonday.setDate(currentMonday.getDate()+7); document.getElementById('weekInput').value=currentMonday.toISOString().slice(0,10); renderTable(fmtDate(currentMonday)); };
       document.getElementById('load').onclick=()=>{ const d=new Date(document.getElementById('weekInput').value); currentMonday=getMonday(d); renderTable(fmtDate(currentMonday)); };
       document.getElementById('saveChanges').onclick=saveChanges;
+      document.getElementById('generateSchedule').onclick=generateScheduleUntil;
     });
   </script>
 </body>
