@@ -109,7 +109,7 @@ td.work:hover, td.rest:hover {
     font-size: 0.85rem;
   }
 }
-
+ 
 
 .navbar {
   background-color: var(--color-primary);
@@ -149,4 +149,48 @@ td.work:hover, td.rest:hover {
 
 .nav-link:hover {
   background-color: rgba(255,255,255,0.1);
+}
+
+
+/* 1) Contenedor scrollable */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* para iOS */
+  margin-bottom: 1.5rem; 
+}
+
+/* Quita el overflow y border-radius de table, que quedará dentro del contenedor */
+table {
+  border-radius: 0; /* si antes lo tenías */
+  overflow: visible; /* asegurar que no lo oculte */
+  box-shadow: none;
+}
+
+/* Para que la tabla se expanda al 100% mínimo */
+.table-container table {
+  min-width: 700px; /* o el ancho que prefieras como mínimo */
+}
+
+/* 2) Ajustes de nav y controles en móvil */
+@media (max-width: 600px) {
+  .navbar {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 0.5rem;
+  }
+  .nav-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .controls button,
+  .controls input[type="date"] {
+    width: 100%;
+    box-sizing: border-box;
+  }
 }
