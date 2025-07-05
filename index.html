@@ -19,6 +19,12 @@
     .nav-container { display: flex; align-items: center; gap: 1rem; }
     .nav-logo { font-weight: bold; }
     .nav-links a { margin-right: .75rem; text-decoration: none; color: inherit; }
+    /* Estados */
+    td.work         { background: var(--color-success,#6cb62c); color: #fff; }
+    td.rest         { background: var(--color-accent,#f37021); color: #fff; }
+    td.vacaciones   { background: #1976d2; color: #fff; }
+    td.incapacidad  { background: #c62828; color: #fff; }
+    td.cumpleaños   { background: #fbc02d; color: #002d59; }
   </style>
   <link rel="stylesheet" href="estilos.css">
 
@@ -76,15 +82,27 @@
       return dt;
     }
 
+    
     async function loadData() {
-      let res=await fetch('schedule.csv');
-      if(!res.ok) throw new Error('schedule.csv no encontrado');
-      let rows=(await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
-      for(let i=1;i<rows.length;i++){const [date,...names]=rows[i];scheduleMap[date]=names;weeks.push(date);}      
-      res = await fetch('overrides.csv?ts=' + Date.now(), { cache: 'no-store' });
-      if(res.ok){
-        let orows=(await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
-        for(let i=1;i<orows.length;i++){const [date,pos,day,val]=orows[i];overrideMap[date]=overrideMap[date]||{};overrideMap[date][pos]=overrideMap[date][pos]||{};overrideMap[date][pos][day]= val==='1';}
+      // schedule.csv
+      let res = await fetch('schedule.csv');
+      if(!res.ok) { document.getElementById('message').textContent='schedule.csv no encontrado'; return; }
+      const rows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
+      rows.slice(1).forEach(r=>{
+        scheduleMap[r[0]] = r.slice(1);
+        weeks.push(r[0]);
+      });
+      // overrides.csv sin cache
+      res = await fetch('overrides.csv?ts='+Date.now(),{cache:'no-store'});
+      overrideMap = {};
+      if(res.ok) {
+        const orows = (await res.text()).trim().split(/\r?\n/).map(r=>r.split(',').map(c=>c.trim()));
+        orows.slice(1).forEach(r=>{
+          const [date,pos,day,val] = r;
+          overrideMap[date] = overrideMap[date]||{};
+          overrideMap[date][pos] = overrideMap[date][pos]||{};
+          overrideMap[date][pos][day] = parseInt(val,10);
+        });
       }
     }
 
@@ -99,18 +117,20 @@
       hdr+='<th>Hrs</th></tr>';
       table.innerHTML=`<thead>${hdr}</thead><tbody></tbody>`;
       const tb=table.querySelector('tbody');
-      for(let pos=0;pos<10;pos++){
-        let row=`<tr><td>${names[pos]||''}</td>`;let hrs=0;
-        for(let d=0;d<7;d++){
-          let work=(d<6 && baseSchedule[pos][d]===1);
-          const ov=overrideMap[key]&&overrideMap[key][String(pos)]&&overrideMap[key][String(pos)][String(d)];
-          if(ov!==undefined) work=ov;
-          if(work) hrs+=12;
-          row+=`<td class="${work?'work':'rest'}">${work?'Turno':'Descanso'}</td>`;
+
+      names.forEach((name,pos)=>{
+        let hrs=0, row=`<tr><td>${name}</td>`;
+        for(let d=0; d<7; d++){
+          const ov = overrideMap[key]?.[pos]?.[d],
+                v  = ov!==undefined ? ov : ((d<6 && baseSchedule[pos][d])?1:0);
+          if(v===1) hrs+=12;
+          const txt = ['Descanso','Turno','Vacaciones','Incapacidad','Cumpleaños'][v],
+                cls = ['rest','work','vacaciones','incapacidad','cumpleaños'][v];
+          row += `<td class="${cls}">${txt}</td>`;
         }
-        row+=`<td>${hrs}</td></tr>`;
+        row += `<td>${hrs}</td></tr>`;
         tb.insertAdjacentHTML('beforeend',row);
-      }
+      });
     }
 
     document.addEventListener('DOMContentLoaded',async()=>{
